@@ -32,13 +32,17 @@ resource "aws_security_group" "ec2" {
 }
 
 
+#atasam IAM la EC2
+
 resource "aws_instance" "main" {
     ami = "ami-0720a3ca2735bf2fa"
     instance_type = "t2.micro"
     subnet_id = aws_subnet.public.id
     vpc_security_group_ids = [aws_security_group.ec2.id]
+    iam_instance_profile = aws_iam_instance_profile.ec2.name
 
     tags = {
+
         Name = "${var.project_name}-ec2"
         Project = var.project_name
     }
