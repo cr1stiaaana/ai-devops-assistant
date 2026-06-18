@@ -1,0 +1,16 @@
+[project]
+
+name = "ai-devops-mcp-server"
+version = "0.1.0"
+description = "MCP Server that exposes AWS inspection tools for the AI DevOps Assistant"
+requires-python = ">3.11"
+dependencies = [
+    "mcp>=1.0.0", #MCP SDK - expune tools catre AI Agent
+    "boto3>=1.34.0", # AWS SDK for  Python - apeleaza AWS APIs (EC2, S3, CloudWatch, etc)
+    "python-dotenv>=1.0.0" # Incarca variabile din .env files (pentru development local)
+
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,3 +1,5 @@
+# terraform/pipeline.tf
+
 resource "aws_codestarconnections_connection" "github" {
     name = "${var.project_name}-github"
     provider_type = "GitHub"
@@ -146,7 +148,7 @@ resource "aws_codebuild_project" "terraform" {
 
         environment_variable {
             name = "TF_VERSION"
-            value = "1.9.0"
+            value = "1.15.6"
         }
     }
 

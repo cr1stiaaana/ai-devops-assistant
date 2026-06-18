@@ -15,6 +15,7 @@ terraform {
       bucket         = "ai-devops-tfstate-ai-devops-assistant"
       key            = "terraform.tfstate"
       region         = "eu-west-1"
+      dynamodb_table = "terraform-lock"
     }
 }
 

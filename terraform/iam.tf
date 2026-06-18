@@ -1,3 +1,5 @@
+# terraform/iam.tf
+ 
     resource "aws_iam_role" "ec2" {
         name = "${var.project_name}-ec2-role"
 
