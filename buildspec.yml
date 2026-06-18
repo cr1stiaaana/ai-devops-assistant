@@ -8,8 +8,8 @@ phases:
   install:
     commands:
       - wget -q https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
-      - unzip -o terraform_${TF_VERSION}_linux_amd64.zip
-      - mv terraform /usr/local/bin/
+      - mkdir -p /tmp/tf && unzip -o terraform_${TF_VERSION}_linux_amd64.zip -d /tmp/tf
+      - mv /tmp/tf/terraform /usr/local/bin/terraform
 
   build:
     commands:
