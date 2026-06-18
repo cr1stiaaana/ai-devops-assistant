@@ -15,7 +15,6 @@ terraform {
       bucket         = "ai-devops-tfstate-ai-devops-assistant"
       key            = "terraform.tfstate"
       region         = "eu-west-1"
-      use_lockfile   = true
     }
 }
 
