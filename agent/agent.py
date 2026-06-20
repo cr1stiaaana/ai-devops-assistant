@@ -5,9 +5,9 @@ CLI care întreabă despre infrastructura AWS.
 
 Două moduri:
 1. Fără AI (direct) - parsează comenzi simple și apelează tools
-2. Cu Gemini AI (gratis) - interpretare natural language
+2. Cu Groq AI (gratis) - interpretare natural language via Llama 3
 
-Setează GOOGLE_API_KEY pentru modul AI, altfel merge în modul direct.
+Setează GROQ_API_KEY pentru modul AI, altfel merge în modul direct.
 """
 
 import sys
@@ -39,6 +39,8 @@ Comenzi disponibile:
 def format_ec2(instances):
     if not instances:
         return "Nu am găsit instanțe EC2."
+    if isinstance(instances[0], dict) and instances[0].get("error"):
+        return f"Eroare EC2: {instances[0]['error_message']}"
     lines = ["EC2 Instances:"]
     for i in instances:
         lines.append(f"  • {i['instance_id']} | {i['state']} | {i['type']} | {i['availability_zone']}")
@@ -48,6 +50,8 @@ def format_ec2(instances):
 def format_s3(buckets):
     if not buckets:
         return "Nu am găsit bucket-uri S3."
+    if isinstance(buckets[0], dict) and buckets[0].get("error"):
+        return f"Eroare S3: {buckets[0]['error_message']}"
     lines = ["S3 Buckets:"]
     for b in buckets:
         status = "🔒 blocked" if b['public_access_blocked'] else "⚠️  public"
@@ -64,6 +68,8 @@ def format_cost(data):
 def format_alarms(alarms):
     if not alarms:
         return "Nu există alarme CloudWatch configurate."
+    if isinstance(alarms[0], dict) and alarms[0].get("error"):
+        return f"Eroare CloudWatch: {alarms[0]['error_message']}"
     lines = ["CloudWatch Alarms:"]
     for a in alarms:
         lines.append(f"  • {a['alarm_name']} | {a['state']} | {a['metric']}")
@@ -121,15 +127,18 @@ def run_direct_mode():
         print()
 
 
-# ---- MODUL GEMINI (free) ----
+# ---- MODUL GROQ (free) ----
 
-def run_gemini_mode():
-    """Modul cu Google Gemini AI - natural language."""
-    import google.generativeai as genai
-    
-    genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-    
-    # Definim tools ca funcții pe care Gemini le poate apela
+def run_groq_mode():
+    """Modul cu Groq AI - natural language via Llama 3."""
+    from openai import OpenAI
+    import json
+
+    client = OpenAI(
+        api_key=os.environ["GROQ_API_KEY"],
+        base_url="https://api.groq.com/openai/v1",
+    )
+
     tools_map = {
         "list_ec2_instances": list_ec2_instances,
         "list_s3_buckets": list_s3_buckets,
@@ -137,106 +146,133 @@ def run_gemini_mode():
         "get_cloudwatch_alarms": get_cloudwatch_alarms,
         "get_ec2_metrics": get_ec2_metrics,
     }
-    
-    # Tool declarations pentru Gemini
-    tool_declarations = [
-        genai.protos.Tool(function_declarations=[
-            genai.protos.FunctionDeclaration(
-                name="list_ec2_instances",
-                description="Listează toate instanțele EC2 cu id, state, type și availability zone",
-                parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={}),
-            ),
-            genai.protos.FunctionDeclaration(
-                name="list_s3_buckets",
-                description="Listează toate bucket-urile S3 cu nume, regiune și public access status",
-                parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={}),
-            ),
-            genai.protos.FunctionDeclaration(
-                name="get_monthly_cost",
-                description="Returnează costul total din luna curentă în USD",
-                parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={}),
-            ),
-            genai.protos.FunctionDeclaration(
-                name="get_cloudwatch_alarms",
-                description="Listează toate alarmele CloudWatch",
-                parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={}),
-            ),
-            genai.protos.FunctionDeclaration(
-                name="get_ec2_metrics",
-                description="Returnează CPU, NetworkIn, NetworkOut pentru o instanță EC2 (ultimele 60 min)",
-                parameters=genai.protos.Schema(
-                    type=genai.protos.Type.OBJECT,
-                    properties={"instance_id": genai.protos.Schema(type=genai.protos.Type.STRING)},
-                    required=["instance_id"],
-                ),
-            ),
-        ])
+
+    # Tool definitions in OpenAI format
+    tool_definitions = [
+        {
+            "type": "function",
+            "function": {
+                "name": "list_ec2_instances",
+                "description": "Listează toate instanțele EC2 cu id, state, type și availability zone",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_s3_buckets",
+                "description": "Listează toate bucket-urile S3 cu nume, regiune și public access status",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_monthly_cost",
+                "description": "Returnează costul total din luna curentă în USD",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_cloudwatch_alarms",
+                "description": "Listează toate alarmele CloudWatch cu nume, stare și metric",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_ec2_metrics",
+                "description": "Returnează CPU avg, NetworkIn și NetworkOut pentru o instanță EC2 (ultimele 60 min)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "instance_id": {"type": "string", "description": "ID-ul instanței EC2"}
+                    },
+                    "required": ["instance_id"],
+                },
+            },
+        },
     ]
-    
-    model = genai.GenerativeModel(
-        "gemini-2.0-flash",
-        tools=tool_declarations,
-        system_instruction="Ești un DevOps Assistant. Folosește tools-urile disponibile pentru a răspunde cu date reale din AWS. Răspunde concis.",
-    )
-    
-    chat = model.start_chat()
-    
-    print("🤖 DevOps Assistant (Gemini AI)")
+
+    messages = [
+        {"role": "system", "content": (
+            "Ești un DevOps Assistant. Folosește tools-urile disponibile pentru a răspunde cu date reale din AWS.\n"
+            "Reguli:\n"
+            "1. Pentru întrebări generale (ex: 'ec2', 's3') apelează DOAR tool-ul relevant (list_ec2 sau list_s3) - NU apela alte tools.\n"
+            "2. Răspunde concis: arată doar un rezumat scurt (câte instanțe sunt, câte active/oprite, sau câte bucket-uri).\n"
+            "3. La final întreabă ÎNTOTDEAUNA: 'Dorești mai multe detalii?'\n"
+            "4. Apelează tools suplimentare (metrics, alarms, costs) DOAR dacă utilizatorul cere explicit mai multe detalii.\n"
+            "5. Nu repeta apeluri la același tool în aceeași conversație dacă datele nu s-au schimbat."
+        )}
+    ]
+
+    print("🤖 DevOps Assistant (Groq AI - Llama 3)")
     print("   Pune o întrebare despre infrastructura ta AWS (sau 'exit'):\n")
-    
+
     while True:
         try:
             user_input = input("Tu: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n👋 La revedere!")
             break
-        
+
         if not user_input:
             continue
         if user_input.lower() in ("exit", "quit"):
             print("👋 La revedere!")
             break
-        
-        response = chat.send_message(user_input)
-        
-        # Procesează tool calls dacă sunt
-        while response.candidates[0].content.parts:
-            has_function_call = False
-            for part in response.candidates[0].content.parts:
-                if part.function_call:
-                    has_function_call = True
-                    fn_name = part.function_call.name
-                    fn_args = dict(part.function_call.args) if part.function_call.args else {}
-                    
-                    print(f"  🔧 Apelează: {fn_name}")
-                    
-                    # Execută tool-ul
+
+        messages.append({"role": "user", "content": user_input})
+
+        # Loop pentru tool calling (max 5 runde)
+        tool_rounds = 0
+        while tool_rounds < 5:
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=messages,
+                tools=tool_definitions,
+                tool_choice="auto",
+            )
+
+            msg = response.choices[0].message
+            messages.append(msg)
+
+            if msg.tool_calls:
+                tool_rounds += 1
+                for tool_call in msg.tool_calls:
+                    fn_name = tool_call.function.name
+                    fn_args = json.loads(tool_call.function.arguments) if tool_call.function.arguments and tool_call.function.arguments.strip() != "null" else {}
+
                     result = tools_map[fn_name](**fn_args)
-                    
-                    # Trimite rezultatul înapoi
-                    response = chat.send_message(
-                        genai.protos.Content(parts=[
-                            genai.protos.Part(function_response=genai.protos.FunctionResponse(
-                                name=fn_name,
-                                response={"result": str(result)},
-                            ))
-                        ])
-                    )
-            
-            if not has_function_call:
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps(result, default=str),
+                    })
+            else:
+                # No tool calls - print final response
+                print(f"\n🤖 {msg.content}\n")
                 break
-        
-        # Afișează răspunsul final
-        print(f"\n🤖 {response.text}\n")
+        else:
+            # Hit the limit - force a response without tools
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=messages,
+            )
+            print(f"\n🤖 {response.choices[0].message.content}\n")
 
 
 # ---- ENTRY POINT ----
 
 if __name__ == "__main__":
-    if os.environ.get("GOOGLE_API_KEY"):
-        run_gemini_mode()
+    if os.environ.get("GROQ_API_KEY"):
+        run_groq_mode()
     else:
-        print("💡 Tip: Setează GOOGLE_API_KEY pentru modul AI (Gemini, gratis)")
-        print("   export GOOGLE_API_KEY='cheia-ta'")
-        print("   Obține de la: https://aistudio.google.com/apikey\n")
+        print("💡 Tip: Setează GROQ_API_KEY pentru modul AI (Groq, gratis)")
+        print("   export GROQ_API_KEY='cheia-ta'")
+        print("   Obține de la: https://console.groq.com\n")
         run_direct_mode()
